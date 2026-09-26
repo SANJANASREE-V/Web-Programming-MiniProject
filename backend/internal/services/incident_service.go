@@ -1,0 +1,158 @@
+package services
+
+import (
+	"context"
+	"time"
+
+	"github.com/Abhi78k/api-performance-observatory/backend/internal/logger"
+	"github.com/Abhi78k/api-performance-observatory/backend/internal/models"
+	"github.com/Abhi78k/api-performance-observatory/backend/internal/repositories"
+)
+
+type IncidentService struct {
+	incidentRepo repositories.IncidentRepositoryInterface
+	endpointRepo repositories.EndpointRepositoryInterface
+}
+
+func NewIncidentService(
+	incidentRepo repositories.IncidentRepositoryInterface,
+	endpointRepo repositories.EndpointRepositoryInterface,
+) *IncidentService {
+	return &IncidentService{
+		incidentRepo: incidentRepo,
+		endpointRepo: endpointRepo,
+	}
+}
+
+func (s *IncidentService) StartIncident(
+	ctx context.Context,
+	endpointID uint,
+) error {
+
+	incident := &models.Incident{
+		EndpointID: endpointID,
+		StartedAt:  time.Now(),
+		IsResolved: false,
+	}
+
+	err := s.incidentRepo.Create(ctx, incident)
+
+	if err != nil {
+		return err
+	}
+
+	logger.Warn(
+		"Incident created",
+		"endpoint_id", endpointID,
+	)
+
+	return nil
+}
+
+func (s *IncidentService) GetActiveIncidentByEndpointID(
+	ctx context.Context,
+	endpointID uint,
+) (*models.Incident, error) {
+
+	return s.incidentRepo.GetActiveIncidentByEndpointID(ctx, endpointID)
+}
+
+func (s *IncidentService) GetActiveIncidents(ctx context.Context) (
+	[]models.Incident,
+	error,
+) {
+
+	return s.incidentRepo.GetActiveIncidents(ctx)
+}
+
+func (s *IncidentService) ResolveIncident(
+	ctx context.Context,
+	incident *models.Incident,
+) error {
+
+	now := time.Now()
+
+	if incident.StartedAt.IsZero() {
+		incident.StartedAt = now
+	}
+
+	incident.ResolvedAt = &now
+	incident.IsResolved = true
+
+	err := s.incidentRepo.Update(ctx, incident)
+
+	if err != nil {
+		return err
+	}
+
+	logger.Info(
+		"Incident resolved",
+		"incident_id", incident.ID,
+	)
+
+	return nil
+}
+
+func (s *IncidentService) GetAllIncidents(ctx context.Context) (
+	[]models.Incident,
+	error,
+) {
+
+	incidents, err := s.incidentRepo.GetAllIncidents(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return incidents, err
+}
+
+func (s *IncidentService) GetIncidentsPaginated(
+	ctx context.Context,
+	isResolvedStr string,
+	page, limit int,
+) ([]models.Incident, int64, error) {
+	offset := (page - 1) * limit
+	return s.incidentRepo.GetIncidentsPaginated(ctx, isResolvedStr, offset, limit)
+}
+
+func (s *IncidentService) GetActiveIncidentsPaginated(
+	ctx context.Context,
+	page, limit int,
+) ([]models.Incident, int64, error) {
+	offset := (page - 1) * limit
+	return s.incidentRepo.GetIncidentsPaginated(ctx, "false", offset, limit)
+}
+
+func (s *IncidentService) GetIncidentByID(ctx context.Context, id uint) (
+	*models.Incident,
+	error,
+) {
+
+	incident, err := s.incidentRepo.GetIncidentByID(ctx, id)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return incident, err
+}
+
+func (s *IncidentService) GetIncidentsByEndpointID(
+	ctx context.Context,
+	endpointID uint,
+) ([]models.Incident, error) {
+	return s.incidentRepo.GetByEndpointID(ctx, endpointID)
+}
+
+func (s *IncidentService) GetEndpointNamesMap(ctx context.Context) map[uint]string {
+	endpoints, err := s.endpointRepo.GetAllEndpoints(ctx)
+	if err != nil {
+		return map[uint]string{}
+	}
+	namesMap := make(map[uint]string)
+	for _, ep := range endpoints {
+		namesMap[ep.ID] = ep.Name
+	}
+	return namesMap
+}

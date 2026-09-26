@@ -1,0 +1,192 @@
+package repositories
+
+import (
+	"context"
+	"strconv"
+
+	"github.com/Abhi78k/api-performance-observatory/backend/internal/models"
+	"gorm.io/gorm"
+)
+
+type IncidentRepositoryInterface interface {
+	Create(
+		ctx context.Context,
+		incident *models.Incident,
+	) error
+	GetActiveIncidentByEndpointID(
+		ctx context.Context,
+		endpointID uint,
+	) (*models.Incident, error)
+	Update(
+		ctx context.Context,
+		incident *models.Incident,
+	) error
+	GetByEndpointID(
+		ctx context.Context,
+		endpointID uint,
+	) ([]models.Incident, error)
+	GetAllIncidents(ctx context.Context) ([]models.Incident, error)
+	GetIncidentsPaginated(
+		ctx context.Context,
+		isResolvedStr string,
+		offset, limit int,
+	) ([]models.Incident, int64, error)
+	GetIncidentByID(ctx context.Context, id uint) (*models.Incident, error)
+	GetActiveIncidents(ctx context.Context) (
+		[]models.Incident,
+		error,
+	)
+	GetRecentIncidents(ctx context.Context) (
+		[]models.Incident,
+		error,
+	)
+}
+
+type IncidentRepository struct {
+	db *gorm.DB
+}
+
+func NewIncidentRepository(db *gorm.DB) *IncidentRepository {
+	return &IncidentRepository{
+		db: db,
+	}
+}
+
+func (r *IncidentRepository) Create(
+	ctx context.Context,
+	incident *models.Incident,
+) error {
+	return r.db.WithContext(ctx).Create(incident).Error
+}
+
+func (r *IncidentRepository) GetActiveIncidentByEndpointID(
+	ctx context.Context,
+	endpointID uint,
+) (*models.Incident, error) {
+
+	var incident models.Incident
+
+	result := r.db.WithContext(ctx).
+		Where(
+			"endpoint_id = ? AND is_resolved = ?",
+			endpointID,
+			false,
+		).
+		First(&incident)
+
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+
+	return &incident, nil
+}
+
+func (r *IncidentRepository) Update(
+	ctx context.Context,
+	incident *models.Incident,
+) error {
+	return r.db.WithContext(ctx).Save(incident).Error
+}
+
+func (r *IncidentRepository) GetByEndpointID(
+	ctx context.Context,
+	endpointID uint,
+) ([]models.Incident, error) {
+
+	var incidents []models.Incident
+
+	err := r.db.WithContext(ctx).
+		Where("endpoint_id = ?", endpointID).
+		Find(&incidents).
+		Error
+
+	return incidents, err
+}
+
+func (r *IncidentRepository) GetAllIncidents(ctx context.Context) ([]models.Incident, error) {
+
+	var incidents []models.Incident
+
+	err := r.db.WithContext(ctx).Order("started_at DESC").Find(&incidents).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return incidents, err
+}
+
+func (r *IncidentRepository) GetIncidentByID(ctx context.Context, id uint) (*models.Incident, error) {
+
+	var incident models.Incident
+
+	err := r.db.WithContext(ctx).Where("ID = ?", id).First(&incident).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &incident, nil
+}
+
+func (r *IncidentRepository) GetActiveIncidents(ctx context.Context) (
+	[]models.Incident,
+	error,
+) {
+
+	var incidents []models.Incident
+
+	err := r.db.WithContext(ctx).Where("is_resolved = ?", false).Find(&incidents).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return incidents, err
+}
+
+func (r *IncidentRepository) GetRecentIncidents(ctx context.Context) (
+	[]models.Incident,
+	error,
+) {
+
+	var incidents []models.Incident
+
+	err := r.db.WithContext(ctx).Order("started_at DESC").Limit(10).Find(&incidents).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return incidents, nil
+}
+
+func (r *IncidentRepository) GetIncidentsPaginated(
+	ctx context.Context,
+	isResolvedStr string,
+	offset, limit int,
+) ([]models.Incident, int64, error) {
+
+	var incidents []models.Incident
+	var total int64
+
+	db := r.db.WithContext(ctx).Model(&models.Incident{})
+
+	if isResolvedStr != "" && isResolvedStr != "all" {
+		isResolved, err := strconv.ParseBool(isResolvedStr)
+		if err == nil {
+			db = db.Where("is_resolved = ?", isResolved)
+		}
+	}
+
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := db.Order("started_at DESC").Offset(offset).Limit(limit).Find(&incidents).Error
+	return incidents, total, err
+}
